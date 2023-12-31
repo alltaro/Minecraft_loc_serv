@@ -1,0 +1,94 @@
+<!-- create-server.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Créer un Serveur Minecraft</title>
+    <style>
+      /* Styles CSS ici */
+      .vibrate {
+        animation: vibrate 0.3s ease infinite;
+      }
+
+      @keyframes vibrate {
+        0% {
+          transform: translateX(0);
+        }
+        20% {
+          transform: translateX(-2px);
+        }
+        40% {
+          transform: translateX(2px);
+        }
+        60% {
+          transform: translateX(-2px);
+        }
+        80% {
+          transform: translateX(2px);
+        }
+        100% {
+          transform: translateX(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Créer un Serveur Minecraft</h1>
+
+    <form
+      action="/create-server"
+      method="post"
+      onsubmit="return checkServerend(event)"
+    >
+      <label for="serverName">Nom du Serveur :</label>
+      <input
+        type="text"
+        id="serverName"
+        name="serverName"
+        required
+        onkeyup="return checkServerName()"
+      />
+      <div id="serverNameError" style="color: red; display: none">
+        Ce nom de serveur est déjà utilisé.
+      </div>
+
+      <label for="serverPassword">Mot de passe :</label>
+      <input
+        type="password"
+        id="serverPassword"
+        name="serverPassword"
+        required
+      />
+
+      <input type="submit" value="Créer le Serveur" />
+    </form>
+
+    <script>
+      let allowsubmit = false;
+
+      async function checkServerend(event) {
+        if (!allowsubmit) {
+          event.preventDefault(); // Empêche l'envoi du formulaire par défaut
+        }
+        const serverName = document.getElementById("serverName").value;
+        const serverPassword = document.getElementById("serverPassword").value;
+
+        const response = await fetch(`/check-server?name=${serverName}`);
+        const data = await response.json();
+
+        if (data.exists) {
+          const passwordInput = document.getElementById("serverName");
+          passwordInput.classList.add("vibrate");
+          setTimeout(() => {
+            passwordInput.classList.remove("vibrate");
+          }, 300); // Arrêter l'animation de vibration après 0.3 secondes
+        } else {
+          allowsubmit = true;
+          checkServerend(event);
+        }
+      }
+    </script>
+  </body>
+</html>

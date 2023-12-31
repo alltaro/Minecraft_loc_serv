@@ -1,0 +1,111 @@
+<!-- gerer-op.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gérer les Opérateurs</title>
+  </head>
+  <body>
+    <h1>Gérer les Opérateurs</h1>
+
+    <h2>Liste des Opérateurs</h2>
+    <ul id="listeOp">
+      <!-- La liste des opérateurs sera générée ici par JavaScript -->
+    </ul>
+
+    <h2>Ajouter un Opérateur</h2>
+    <form id="ajouterJoueurForm">
+      <label for="nouveauJoueur">Nouveau Joueur :</label>
+      <input type="text" id="nouveauJoueur" name="nouveauJoueur" required />
+      <input type="button" value="Ajouter" onclick="ajouterJoueur()" />
+    </form>
+
+    <!-- Ajoutez un div pour afficher les alertes -->
+    <div id="alertBox"></div>
+
+    <script>
+      let allowsubmit = false;
+
+      // Fonction pour dé-opérer un joueur
+      function deop(joueur) {
+        // Envoyer une requête au serveur pour dé-opérer le joueur
+        fetch("/gerer-op/liste", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ joueur }),
+        })
+          .then((response) => response.text())
+          .then((message) => {
+            // Afficher le message dans le div d'alerte
+            const alertBox = document.getElementById("alertBox");
+            alertBox.textContent = message;
+            // Actualiser la liste des opérateurs
+            actualiserListeOp();
+          })
+          .catch((error) => {
+            alert("Erreur lors de la dé-opération : " + error);
+          });
+      }
+
+      // Fonction pour actualiser la liste des opérateurs
+      function actualiserListeOp() {
+        // Récupérer la liste des opérateurs depuis le serveur
+        fetch("/gerer-op/liste")
+          .then((response) => response.json())
+          .then((opListe) => {
+            const listeOp = document.getElementById("listeOp");
+            listeOp.innerHTML = "";
+            // Effacer la liste actuelle
+
+            // Générer la nouvelle liste des opérateurs
+            opListe.forEach((joueur) => {
+              const listItem = document.createElement("li");
+              listItem.textContent = joueur;
+              const deopButton = document.createElement("button");
+              deopButton.textContent = "Dé-op";
+              deopButton.addEventListener("click", () => deop(joueur));
+              listItem.appendChild(deopButton);
+              listeOp.appendChild(listItem);
+            });
+          })
+          .catch((error) => {
+            alert(
+              "Erreur lors de la récupération de la liste des opérateurs : " +
+                error
+            );
+          });
+      }
+
+      // Fonction pour ajouter un joueur
+      function ajouterJoueur() {
+        const nouveauJoueur = document.getElementById("nouveauJoueur").value;
+
+        // Envoyer une requête au serveur pour ajouter le joueur
+        fetch("/gerer-op/liste", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ nouveauJoueur }),
+        })
+          .then((response) => response.text())
+          .then((message) => {
+            // Afficher le message dans le div d'alerte
+            const alertBox = document.getElementById("alertBox");
+            alertBox.textContent = message;
+            // Actualiser la liste des opérateurs
+            actualiserListeOp();
+          })
+          .catch((error) => {
+            alert("Erreur lors de l'ajout du joueur : " + error);
+          });
+      }
+
+      // Appeler la fonction d'actualisation au chargement de la page
+      window.addEventListener("load", actualiserListeOp);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,163 @@
+body {
+  overflow: hidden;
+  width: 350px;
+}
+
+.test-selectors, .test-summary, .test-save {
+  display: none;
+  background-color: #fff9f8;
+  border: 1px solid #ffaca8;
+  border-radius: 12px;
+  border-bottom-left-radius: 0;
+  border-top-left-radius: 0;
+}
+
+.bubble-icon {
+  display: flex;
+  align-items: center;
+}
+
+.bubble-icon.hidden {
+  display: none;
+}
+
+.bubble-icon img {
+  width: 50px;
+  height: 50px;
+  padding: 6px;
+  border-radius: 50%;
+  background-color: white;
+  border: 1px solid #c2c2c2;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.125);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.bubble-icon .bubble-icon__label {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-left: -15px;
+  padding: 0 10px 0 20px;
+  background: white;
+  border: 1px solid #c2c2c2;
+  border-top-right-radius: 30px;
+  border-bottom-right-radius: 30px;
+  z-index: 1;
+}
+
+.bubble-icon .bubble-icon__label__input {
+  font-weight: bold;
+}
+
+.bubble-icon .bubble-icon__label__selector {
+  display: inline-block;
+  max-width: 280px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-style: italic;
+  overflow: hidden;
+}
+
+.close {
+  position: absolute;
+  right: 2px;
+  cursor: pointer;
+}
+
+.test-header {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.test-content {
+  padding: 10px 15px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+.test-content input,
+.test-content input:focus {
+  box-shadow: none !important;
+  border-bottom: none !important;
+  margin: 0 !important;
+  height: 35px;
+}
+
+.selector {
+  margin-bottom: 10px;
+}
+
+.selector label {
+  font-size: 14px;
+  color: inherit;
+}
+.selector label span {
+  color: red;
+}
+
+.field {
+  display: flex;
+  background-color: #fff;
+  padding: 0 0 0 10px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.field .pipette {
+  background-color: #ffaca8;
+  width: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.test-footer {
+  display: flex;
+  margin: 15px 25px;
+  justify-content: space-around;
+}
+
+.alerte {
+  cursor: pointer;
+  text-decoration: underline;
+  text-align: center;
+  font-size: 12px;
+}
+
+.test-summary textarea {
+  width: 315px;
+  height: 225px;
+  background-color: rgb(255, 255, 255);
+  border: none;
+  margin: 14px;
+  white-space: nowrap;
+}
+
+.test-save button {
+  white-space: nowrap;
+  margin: 10px;
+}
+
+.test-summary {
+  padding-bottom: 16px;
+}
+
+.test-summary .back {
+  position: absolute;
+}
+.back svg {
+  cursor: pointer;
+  width: 30px;
+}
+
+.mobile {
+  color: red;
+}
+
+.mobile.hidden {
+  display: none;
+}

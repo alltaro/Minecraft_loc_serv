@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload de Fichier</title>
+    <style>
+	
+        #drop_zone {
+            width: 200px;
+            height: 200px;
+            border: 1px solid black;
+        }
+    </style>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+    <div id="drop_zone">Déposez les fichiers ici</div>
+    <input type="file" id="fileInput" style="display: none;" />
+    <!-- Ajout de l'élément pour l'animation -->
+<div id="animation" class="container" style="display: none;">
+        <!-- Votre code SVG ici -->
+    <div class="container">
+  <svg width="100" height="100" viewBox="0 0 300 300">
+    <defs>
+      <linearGradient id="gradient-fill" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="300" y2="0">
+        <stop offset="0%">
+          <animate attributeName="stop-color" values="#00E06B;#CB0255;#00E06B" dur="5s" repeatCount="indefinite" />
+        </stop>
+        <stop offset="100%">
+          <animate attributeName="stop-color" values="#04AFC8;#8904C5;#04AFC8" dur="8s" repeatCount="indefinite" />
+        </stop>
+      </linearGradient>
+      <clipPath id="clip">
+        <rect class="square s1" x="0" y="0" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s2" x="100" y="0" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s3" x="200" y="0" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s4" x="0" y="100" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s5" x="200" y="100" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s6" x="0" y="200" rx="12" ry="12" height="90" width="90"></rect>
+        <rect class="square s7" x="100" y="200" rx="12" ry="12" height="90" width="90"></rect>
+      </clipPath>
+    </defs>
+    <rect class="gradient" clip-path="url('#clip')" height="300" width="300"></rect>
+  </svg>
+</div>
+</div>    
+
+<script>
+        var dropZone = document.getElementById('drop_zone');
+        var fileInput = document.getElementById('fileInput');
+	var animation = document.getElementById('animation');
+        dropZone.addEventListener('click', function() {
+            fileInput.click();
+        });
+
+        dropZone.addEventListener('dragover', function(event) {
+            event.preventDefault();
+        });
+
+        dropZone.addEventListener('drop', function(event) {
+            event.preventDefault();
+            var files = event.dataTransfer.files;
+            for (var i=0; i<files.length; i++) {
+                uploadFile(files[i]);
+            }
+	    animation.style.display = 'block';
+            setTimeout(function() {
+                animation.style.display = 'none';
+            }, 3000); // Masquer l'animation après 3 secondes
+        });
+
+        fileInput.addEventListener('change', function() {
+            var files = fileInput.files;
+            for (var i=0; i<files.length; i++) {
+                uploadFile(files[i]);
+            }
+	    animation.style.display = 'block';
+            setTimeout(function() {
+                animation.style.display = 'none';
+            }, 3000); // Masquer l'animation après 3 secondes
+        });
+
+        function uploadFile(file) {
+            var formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                console.log(`Uploaded file ${file.name}`);
+            }).catch(e => {
+                console.log('There was a problem with the file upload.');
+            });
+        }
+    </script>
+</body>
+</html>
+

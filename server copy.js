@@ -43,15 +43,14 @@ app.use((req, res, next) => {
     next();
   }
 });
-srv_run();
-srv.serialize(() => {
-  srv.run(
-    "CREATE TABLE IF NOT EXISTS servers (username TEXT, containers TEXT, password TEXT)"
+srv_run.serialize(() => {
+  srv_run.run(
+    "CREATE TABLE IF NOT EXISTS runnings (username TEXT, containers TEXT, port INTEGER)"
   );
 });
 srv.serialize(() => {
   srv.run(
-    "CREATE TABLE IF NOT EXISTS servers_runnuing (username TEXT, containers TEXT, port INTEGER)"
+    "CREATE TABLE IF NOT EXISTS servers_runnuing (username TEXT, containers TEXT)"
   );
 });
 db.serialize(() => {
@@ -262,6 +261,7 @@ app
     }
   })
   .post((req, res) => {
+    
     const containerId = req.body.containerId;
     const joueur = req.body.nouveauJoueur; // Récupérer la valeur de nouveauJoueur depuis le corps de la requête
 

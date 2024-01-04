@@ -1,0 +1,21 @@
+{
+    "proto.compiler.path": "Define proto compiler path like : C:\\Users\\Lenovo\\.nuget\\packages\\grpc.tools\\2.40.0\\tools\\windows_x64\\grpc_csharp_plugin.exe",
+    "proto.compiler.grpc.client.output.path": [
+        {
+            "folderName": "Define client folder name like : account",
+            "outputPath": "Define client output path like : C:\\Sorwe\\business-api-gw\\src\\services\\identity\\Sorwe.Business.Employee.Grpc.ClientLibrary\\generated"
+        }
+    ],
+    "proto.compiler.grpc.service.output.path": [
+        {
+            "folderName": "Define service folder name like : account",
+            "outputPath": "Define service output path like : C:\\Sorwe\\business-api-gw\\src\\services\\identity\\Sorwe.Business.Employee.Grpc.ServerLibrary\\generated"
+        }
+    ],
+    "proto.compiler.grpc.base.output.path": [
+        {
+            "folderName": "Define base defination folder name like : base",
+            "outputPath": "Define base defination output path like : C:\\Sorwe\\business-api-gw\\src\\services\\grpc\\Sorwe.Business.Services.Grpc.BaseDefinitions\\generated"
+        }
+    ]
+}

@@ -75,7 +75,7 @@ app.post("/create-server", (req, res) => {
                                 res.send(
                                   "Erreur lors de la création du serveur : " +
                                     err.message
-                                );
+                                 );
                               } else {
                                 console.log("Fichier copié avec succès !");
                                 res.send(`${serverName} a bien été créé`);

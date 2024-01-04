@@ -1,25 +1,26 @@
 const express = require("express");
-const Docker = require("dockerode");
-const { docker } = new Docker();
 const fs = require("fs");
 const app = express();
 const port = 3000;
 const { exec } = require("child_process");
-const containerId = "compassionate_franklin"; // Remplacez par le nom du conteneur Docker
-const localFilePath = __dirname + "/files/ops.json";
-const containerFilePath = "/minecraft/ops.json";
-const docker_Command = `docker cp ${localFilePath} ${containerId}:/minecraft/ops.json`;
+
 const sqlite3 = require("sqlite3").verbose();
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcrypt");
-const md5 = require("md5");
-const srv = new sqlite3.Database("serveurs.db");
+
 const srv_run = new sqlite3.Database("serveurs_running.db");
+const srv = new sqlite3.Database("serveurs.db");
 const db = new sqlite3.Database("login.db");
+
 const uuid = require("uuid");
 const jwt = require("jsonwebtoken");
 const bodyParser = require("body-parser");
 cookie = require("cookie-parser");
+
+const containerId = "compassionate_franklin";
+const localFilePath = __dirname + "/files/ops.json";
+const containerFilePath = "/minecraft/ops.json";
+const docker_Command = `docker cp ${localFilePath} ${containerId}:/minecraft/ops.json`;
 
 app.use(express.json());
 app.use(cookieParser());
@@ -58,6 +59,38 @@ db.serialize(() => {
     "CREATE TABLE IF NOT EXISTS users ( username TEXT UNIQUE, password TEXT , cookie INTEGER, expires INTEGER, uuid TEXT)"
   );
 });
+
+function updateDataIntodb(database, colonne, updating, logging){
+  database.get(
+    `SELECT containers FROM ${colonne} WHERE username = ?`,
+    [logging],
+    (err, row) => {
+      let containers = [];
+      if (row) {
+        containers = JSON.parse(row.containers);
+      }
+      containers.push(updating);
+      const updatedContainers = JSON.stringify(containers);
+
+      database.run(
+        `INSERT INTO ${colonne} (username, containers) VALUES (?, ?)`,
+        [logging, updatedContainers],
+        (err) => {
+          if (err) {
+            console.log(
+              "Erreur lors de la création du serveur : " +
+                err.message
+            );
+          } else {
+            console.log("Fichier copié avec succès !");
+            res.send(`${serverName} a bien été créé`);
+          }
+        }
+      );
+      
+    }
+  );
+}
 
 function findAvailablePort(callback, availablePort = 35000, maxPort = 65535) {
   if (availablePort > maxPort) {
@@ -381,59 +414,67 @@ app
 
 // Endpoint pour créer un serveur Minecraft
 app.post("/create-server", (req, res) => {
-  console.log("1");
   const serverName = req.body.serverName;
   const userCookie = req.cookies.user;
-  db.get("SELECT * FROM servers WHERE cookie = ?", [userCookie], (err, row) => {
-    // Vérifier à nouveau si le nom de serveur existe déjà
-    if (row) {
-      srv.get(
-        "SELECT * FROM servers WHERE containers = ?",
-        [row.username],
-        (err, row) => {
-          if (row) {
-            res.send(
-              "Ce nom de serveur est déjà utilisé. Veuillez choisir un autre nom."
-            );
-          } else {
-            findAvailablePort((port) => {
-              if (port === null) {
-                res.send("Aucun port disponible pour créer un serveur.");
-              } else {
-                srv.run(
-                  "INSERT INTO servers (containers,username) VALUES (?, ?)",
-                  [serverName, row.username],
-                  (err) => {
-                    if (err) {
-                      res.send(
-                        "Erreur lors de la création du serveur : " + err.message
-                      );
-                    } else {
-                      const dockerProcess = `docker run -d --name ${serverName} -p ${port}:25565 minocraft`;
 
-                      exec(dockerProcess, (error, stdout, stderr) => {
-                        if (error) {
-                          console.error(
-                            "Erreur lors de la copie du fichier :",
-                            error
-                          );
-                          return res
-                            .status(500)
-                            .send("Erreur lors de la copie du fichier.");
-                        }
-                        console.log("Fichier copié avec succès !");
-                        res.send(`${serverName} a bien été crée`); // Envoyer une réponse au client
-                      });
-                    }
+  srv.get(
+    "SELECT * FROM users WHERE cookie = ?",
+    [userCookie],
+    (err, userRow) => {
+      if (userRow) {
+        const username = userRow.username;
+
+        // Vérifier si l'utilisateur a déjà un serveur avec le même nom
+        srv.get(
+          "SELECT 1 FROM servers WHERE username = ? AND containers LIKE ?",
+          [username, `%${serverName}%`],
+          (err, serverRow) => {
+            if (serverRow) {
+              res.send("Vous avez déjà un serveur avec le même nom.");
+            } else {
+              // Trouver un port non attribué (exemple : commencez par 30000)
+              let availablePort = 30000;
+              const maxPort = 65535; // Port maximum autorisé
+
+              findAvailablePort(
+                (port) => {
+                  if (port === null) {
+                    res.send("Aucun port disponible pour créer un serveur.");
+                  } else {
+                    // Mettre à jour la liste des conteneurs de l'utilisateur
+                    const dockerProcess = `docker run -d --name ${serverName} -p ${port}:25565 minocraft`;
+
+                    exec(dockerProcess, (error, stdout, stderr) => {
+                      if (error) {
+                        console.error(
+                          "Erreur lors de la copie du fichier :",
+                          error
+                        );
+                        return res
+                          .status(500)
+                          .send("Erreur lors de la copie du fichier.");
+                      }
+
+                      const newContainer = {
+                        name: serverName,
+                        port: port,
+                      };
+
+                      // Mettre à jour la liste des conteneurs dans la base de données
+                      updateDataIntodb(srv, servers, serverName,username)
+                      updateDataIntodb(srv_run, servers, serverName,username)
+                    });
                   }
-                );
-              }
-            });
+                },
+                availablePort,
+                maxPort
+              );
+            }
           }
-        }
-      );
+        );
+      }
     }
-  });
+  );
 });
 app
   .route("/register")

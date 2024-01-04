@@ -8,37 +8,7 @@ srv.serialize(() => {
 
 // ...  
   
- function updateDataIntodb(database, colonne, updating, logging){
-  database.get(
-    `SELECT containers FROM ${colonne} WHERE username = ?`,
-    [logging],
-    (err, row) => {
-      let containers = [];
-      if (row) {
-        containers = JSON.parse(row.containers);
-      }
-      containers.push(updating);
-      const updatedContainers = JSON.stringify(containers);
-
-      database.run(
-        `INSERT INTO ${colonne} (username, containers) VALUES (?, ?)`,
-        [logging, updatedContainers],
-        (err) => {
-          if (err) {
-            console.log(
-              "Erreur lors de la création du serveur : " +
-                err.message
-            );
-          } else {
-            console.log("Fichier copié avec succès !");
-            res.send(`${serverName} a bien été créé`);
-          }
-        }
-      );
-      
-    }
-  );
-}
+ 
 
 app.post("/create-server", (req, res) => {
   const serverName = req.body.serverName;

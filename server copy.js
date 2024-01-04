@@ -433,8 +433,8 @@ app.post("/create-server", (req, res) => {
               res.send("Vous avez déjà un serveur avec le même nom.");
             } else {
               // Trouver un port non attribué (exemple : commencez par 30000)
-              let availablePort = 30000;
-              const maxPort = 65535; // Port maximum autorisé
+              let availablePort = 20000;
+              const maxPort = 25564; // Port maximum autorisé
 
               findAvailablePort(
                 (port) => {

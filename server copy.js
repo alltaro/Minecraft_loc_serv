@@ -529,6 +529,6 @@ app
     });
   });
 
-app.listen(port, () => {
-  console.log(`Le serveur est en écoute sur le port ${port}`);
+app.listen(8080, () => {
+  console.log(`Le serveur est en écoute sur le port 8080`);
 });

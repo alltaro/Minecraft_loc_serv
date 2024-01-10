@@ -204,11 +204,8 @@ app
           if (bcryptRes) {
             let userId;
             if (!row.uuid) {
-              userId = uuid.v4();
-              db.run("UPDATE users SET uuid = ?WHERE username = ?", [
-                userId,
-                row.username,
-              ]);
+              console.log("internal error")
+              res.status(500).send("Internal server issue")
             } else {
               userId = row.uuid;
             }

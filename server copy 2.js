@@ -282,7 +282,7 @@ app
         [userCookie],
         (err, row) => {
           if (row) {
-            const username = row 
+            const username = row;
             srv.get(
               "SELECT 1 FROM servers WHERE username = ? AND containers LIKE ?",
               [username, `%${serverName}%`],
@@ -322,7 +322,7 @@ app
         [userCookie],
         (err, row) => {
           if (row) {
-            const username = row 
+            const username = row;
             srv.get(
               "SELECT 1 FROM servers WHERE username = ? AND containers LIKE ?",
               [username, `%${serverName}%`],

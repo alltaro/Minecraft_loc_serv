@@ -336,7 +336,7 @@ app
                         return;
                       }
                       console.log("Fichier copié avec succès !");
-                      res.send(`${joueur} est maintenant opérateur.`); // Envoyer une réponse au client
+                      res.send(`${joueur} a été retiré des opérateurs.`); // Envoyer une réponse au client
                     }
                   );
                 }

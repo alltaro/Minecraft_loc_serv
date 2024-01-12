@@ -185,8 +185,7 @@ app.get("/check-server", (req, res) => {
   );
 });
 
-app
-  .route("/login")
+app.route("/login")
   .get((req, res) => {
     if (req.cookies.user && checkCookie(req.cookies.user)) {
       res.redirect("/gerer-op");
@@ -222,11 +221,14 @@ app
               "UPDATE users SET cookie = ?, expires = ?WHERE username = ?",
               [token, expirationDate, row.username]
             );
+
+            // Renvoyer les cookies au client
             res.cookie("user", token, {
               expires: expirationDate,
               httpOnly: true,
               sameSite: "strict",
             });
+
             res.redirect("/gerer-op");
           } else {
             // Mot de passe incorrect

@@ -34,6 +34,9 @@
           .then((data) => {
             if (!data.success) {
               alert(data.message);
+            } else {
+              // Rediriger vers la page souhaitée après le login réussi
+              window.location.href = "/gerer-op";
             }
           })
           .catch((error) => {

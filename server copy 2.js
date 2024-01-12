@@ -51,7 +51,7 @@ srv_run.serialize(() => {
 });
 srv.serialize(() => {
   srv.run(
-    "CREATE TABLE IF NOT EXISTS servers_runnuing (username TEXT, containers TEXT)"
+    "CREATE TABLE IF NOT EXISTS servers (username TEXT, containers TEXT)"
   );
 });
 db.serialize(() => {
@@ -115,27 +115,33 @@ function checkCookie(cookies) {
   const cookieName = "user";
 
   return new Promise((resolve, reject) => {
+    if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+      resolve(false); // Ajout d'une vérification pour cookies undefined ou vide
+      return;
+    }
+
     for (var i = 0; i < cookies.length; i++) {
       var cookie = cookies[i].trim();
       if (cookie.startsWith(cookieName + "=")) {
-        db.get(
-          "SELECT * FROM users WHERE cookie = ?",
-          [cookie],
-          (err, row) => {
-            if (err) {
-              reject(err);
-            } else {
+        db.get("SELECT * FROM users WHERE cookie = ?", [cookie], (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            if (row) {
               var expirationDays = 7;
-              const expires = Date.now() + expirationDays;
-              if (row && row.expires < expires) {
+              const expires = row.expires;
+              const currentDate = Date.now();
+              if (expires > currentDate) {
                 resolve(true);
               } else {
                 resolve(false);
               }
+            } else {
+              resolve(false);
             }
           }
-        );
-        break;
+        });
+        return; // Ajout du return pour éviter l'exécution du "resolve(false)" en dehors du callback
       }
     }
 
@@ -204,8 +210,8 @@ app
           if (bcryptRes) {
             let userId;
             if (!row.uuid) {
-              console.log("internal error")
-              res.status(500).send("Internal server issue")
+              console.log("internal error");
+              res.status(500).send("Internal server issue");
             } else {
               userId = row.uuid;
             }
@@ -247,16 +253,29 @@ app
         [userCookie],
         (err, row) => {
           if (row) {
-            data = PrintFileInDocker(containerId, containerFilePath);
-
-            try {
-              console.log(data);
-              const opsData = JSON.parse(data);
-              res.json(opsData); // Renvoyer la liste des opérateurs au format JSON
-            } catch (e) {
-              console.error("Erreur inattendue : " + e.message);
-              res.status(500).send("Erreur inattendue : " + e.message);
-            }
+            const username = row.username;
+            srv.get(
+              "SELECT * FROM servers WHERE username = ?",
+              [username],
+              (err, row) => {
+                if (row.containers) {
+                  servers_data = []
+                  serveurs = row.containers;
+                  for (server in serveurs) {
+                    data = PrintFileInDocker(server, containerFilePath);
+                    const opsData = JSON.parse(servers_data);
+                    servers_data.append(opsData)
+                  }
+                  try {
+                    console.log(servers_data);
+                    res.json(servers_data); // Renvoyer la liste des opérateurs au format JSON
+                  } catch (e) {
+                    console.error("Erreur inattendue : " + e.message);
+                    res.status(500).send("Erreur inattendue : " + e.message);
+                  }
+                }
+              }
+            );
           } else {
             res.redirect("/login");
           }
@@ -395,7 +414,7 @@ app.post("/create-server", (req, res) => {
 
                       // Mettre à jour la liste des conteneurs dans la base de données
                       updateDataIntodb(srv, servers, serverName, username);
-                      updateDataIntodb(srv_run, servers, serverName, username);
+                      updateDataIntodb(srv_run, runnings, serverName, username);
                     });
                   }
                 },

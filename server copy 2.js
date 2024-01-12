@@ -258,15 +258,21 @@ app
               "SELECT * FROM servers WHERE username = ?",
               [username],
               (err, row) => {
-                data = PrintFileInDocker(containerId, containerFilePath);
-
-                try {
-                  console.log(data);
-                  const opsData = JSON.parse(data);
-                  res.json(opsData); // Renvoyer la liste des opérateurs au format JSON
-                } catch (e) {
-                  console.error("Erreur inattendue : " + e.message);
-                  res.status(500).send("Erreur inattendue : " + e.message);
+                if (row.containers) {
+                  servers_data = []
+                  serveurs = row.containers;
+                  for (server in serveurs) {
+                    data = PrintFileInDocker(server, containerFilePath);
+                    const opsData = JSON.parse(servers_data);
+                    servers_data.append(opsData)
+                  }
+                  try {
+                    console.log(servers_data);
+                    res.json(servers_data); // Renvoyer la liste des opérateurs au format JSON
+                  } catch (e) {
+                    console.error("Erreur inattendue : " + e.message);
+                    res.status(500).send("Erreur inattendue : " + e.message);
+                  }
                 }
               }
             );

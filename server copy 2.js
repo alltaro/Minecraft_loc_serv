@@ -118,24 +118,25 @@ function checkCookie(cookies) {
     for (var i = 0; i < cookies.length; i++) {
       var cookie = cookies[i].trim();
       if (cookie.startsWith(cookieName + "=")) {
-        db.get(
-          "SELECT * FROM users WHERE cookie = ?",
-          [cookieName],
-          (err, row) => {
-            if (err) {
-              reject(err);
-            } else {
+        db.get("SELECT * FROM users WHERE cookie = ?", [cookie], (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            if (row) {
               var expirationDays = 7;
-              const expires = Date.now() + expirationDays;
-              if (row && row.expires < expires) {
+              const expires = row.expires;
+              const currentDate = Date.now();
+              if (expires > currentDate) {
                 resolve(true);
               } else {
                 resolve(false);
               }
+            } else {
+              resolve(false);
             }
           }
-        );
-        break;
+        });
+        return; // Ajout du return pour éviter l'exécution du "resolve(false)" en dehors du callback
       }
     }
 

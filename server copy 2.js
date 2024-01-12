@@ -204,8 +204,8 @@ app
           if (bcryptRes) {
             let userId;
             if (!row.uuid) {
-              console.log("internal error")
-              res.status(500).send("Internal server issue")
+              console.log("internal error");
+              res.status(500).send("Internal server issue");
             } else {
               userId = row.uuid;
             }

@@ -115,6 +115,11 @@ function checkCookie(cookies) {
   const cookieName = "user";
 
   return new Promise((resolve, reject) => {
+    if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+      resolve(false); // Ajout d'une vérification pour cookies undefined ou vide
+      return;
+    }
+
     for (var i = 0; i < cookies.length; i++) {
       var cookie = cookies[i].trim();
       if (cookie.startsWith(cookieName + "=")) {

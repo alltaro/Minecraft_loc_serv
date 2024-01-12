@@ -51,7 +51,7 @@ srv_run.serialize(() => {
 });
 srv.serialize(() => {
   srv.run(
-    "CREATE TABLE IF NOT EXISTS servers_runnuing (username TEXT, containers TEXT)"
+    "CREATE TABLE IF NOT EXISTS servers (username TEXT, containers TEXT)"
   );
 });
 db.serialize(() => {
@@ -253,16 +253,23 @@ app
         [userCookie],
         (err, row) => {
           if (row) {
-            data = PrintFileInDocker(containerId, containerFilePath);
+            const username = row.username;
+            srv.get(
+              "SELECT * FROM servers WHERE username = ?",
+              [username],
+              (err, row) => {
+                data = PrintFileInDocker(containerId, containerFilePath);
 
-            try {
-              console.log(data);
-              const opsData = JSON.parse(data);
-              res.json(opsData); // Renvoyer la liste des opérateurs au format JSON
-            } catch (e) {
-              console.error("Erreur inattendue : " + e.message);
-              res.status(500).send("Erreur inattendue : " + e.message);
-            }
+                try {
+                  console.log(data);
+                  const opsData = JSON.parse(data);
+                  res.json(opsData); // Renvoyer la liste des opérateurs au format JSON
+                } catch (e) {
+                  console.error("Erreur inattendue : " + e.message);
+                  res.status(500).send("Erreur inattendue : " + e.message);
+                }
+              }
+            );
           } else {
             res.redirect("/login");
           }
@@ -401,7 +408,7 @@ app.post("/create-server", (req, res) => {
 
                       // Mettre à jour la liste des conteneurs dans la base de données
                       updateDataIntodb(srv, servers, serverName, username);
-                      updateDataIntodb(srv_run, servers, serverName, username);
+                      updateDataIntodb(srv_run, runnings, serverName, username);
                     });
                   }
                 },

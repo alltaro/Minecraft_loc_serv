@@ -120,7 +120,7 @@ function checkCookie(cookies) {
       if (cookie.startsWith(cookieName + "=")) {
         db.get(
           "SELECT * FROM users WHERE cookie = ?",
-          [cookieName],
+          [cookie],
           (err, row) => {
             if (err) {
               reject(err);

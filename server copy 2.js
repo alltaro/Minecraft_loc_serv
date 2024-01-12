@@ -51,7 +51,7 @@ srv_run.serialize(() => {
 });
 srv.serialize(() => {
   srv.run(
-    "CREATE TABLE IF NOT EXISTS servers (username TEXT, containers TEXT)"
+    "CREATE TABLE IF NOT EXISTS servers (username TEXT, containers TEXT[])"
   );
 });
 db.serialize(() => {
@@ -259,12 +259,12 @@ app
               [username],
               (err, row) => {
                 if (row.containers) {
-                  servers_data = []
+                  servers_data = [];
                   serveurs = row.containers;
                   for (server in serveurs) {
                     data = PrintFileInDocker(server, containerFilePath);
                     const opsData = JSON.parse(servers_data);
-                    servers_data.append(opsData)
+                    servers_data.append(opsData);
                   }
                   try {
                     console.log(servers_data);

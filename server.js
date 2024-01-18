@@ -22,6 +22,7 @@ const containerId = "compassionate_franklin";
 const localFilePath = __dirname + "/files/ops.json";
 const containerFilePath = "/minecraft/ops.json";
 const docker_Command = `docker cp ${localFilePath} ${containerId}:/minecraft/ops.json`;
+const maxPort = 65535;
 
 app.use(express.json());
 app.use(cookieParser());
@@ -60,6 +61,39 @@ db.serialize(() => {
     "CREATE TABLE IF NOT EXISTS users ( username TEXT UNIQUE, password TEXT , cookie INTEGER, expires INTEGER, uuid TEXT)"
   );
 });
+function updateInstertingDataIntodb(
+  database,
+  colonne,
+  updating,
+  logging,
+  value
+) {
+  database.get(
+    `SELECT containers FROM ${colonne} WHERE username = ?`,
+    [logging],
+    (err, row) => {
+      let containers = [];
+      if (row) {
+        containers = JSON.parse(row.containers);
+      }
+      containers[updating] = value;
+      const updatedContainers = JSON.stringify(containers);
+
+      database.run(
+        `INSERT INTO ${colonne} (username, containers) VALUES (?, ?)`,
+        [logging, updatedContainers],
+        (err) => {
+          if (err) {
+            console.log(
+              "Erreur lors de la création du serveur : " + err.message
+            );
+          } else {
+          }
+        }
+      );
+    }
+  );
+}
 
 function updateDataIntodb(database, colonne, updating, logging) {
   database.get(
@@ -129,16 +163,16 @@ function findAvailableID(callback, num_start = 0, maxserv = 65535, id) {
 function checkCookie(cookies) {
   const cookieName = "user";
 
-  return new Promise((resolve, reject) => {
+
     if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
-      resolve(false); // Ajout d'une vérification pour cookies undefined ou vide
+      return false// Ajout d'une vérification pour cookies undefined ou vide
       return;
     }
 
     for (var i = 0; i < cookies.length; i++) {
       var cookie = cookies[i].trim();
       if (cookie.startsWith(cookieName + "=")) {
-        db.get("SELECT * FROM users WHERE cookie = ?", [cookie], (err, row) => {
+        db.get("SELECT username FROM users WHERE cookie = ?", [cookie], (err, row) => {
           if (err) {
             reject(err);
           } else {
@@ -147,21 +181,19 @@ function checkCookie(cookies) {
               const expires = row.expires;
               const currentDate = Date.now();
               if (expires > currentDate) {
-                resolve(true);
+                return true
               } else {
-                resolve(false);
+                return false
               }
             } else {
-              resolve(false);
+              return false
             }
           }
         });
         return; // Ajout du return pour éviter l'exécution du "resolve(false)" en dehors du callback
       }
     }
-
-    resolve(false);
-  });
+    return false
 }
 
 function PrintFileInDocker(DockerId, Filepath) {
@@ -203,19 +235,19 @@ app.get("/check-server", (req, res) => {
 app
   .route("/login")
   .get((req, res) => {
-    if (req.cookies.user && checkCookie(req.cookies.user)) {
+    if (req.cookies.user && checkCookie(req.cookies.user)=="True") {
+      console.log("send cookie checked")
       res.redirect("/gerer-op");
     } else {
+      console.log("send login")
       res.sendFile(__dirname + "/public/login.html");
     }
   })
   .post((req, res) => {
-    if (!checkCookie(req.cookies.user)) {
-      return;
-    }
     const { username, password } = req.body;
 
     db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
+      console.log("log 1")
       if (err) {
         console.error(err.message);
         res.status(500).send("Erreur interne du serveur");
@@ -235,7 +267,7 @@ app
             const token = jwt.sign({ userId }, secretKey, { expiresIn: "24h" });
             db.run(
               "UPDATE users SET cookie = ?, expires = ?WHERE username = ?",
-              [token, expirationDate, row.username]
+              [token, expirationDate, username]
             );
 
             // Renvoyer les cookies au client
@@ -244,8 +276,7 @@ app
               httpOnly: true,
               sameSite: "strict",
             });
-
-            res.redirect("/gerer-op");
+            res.redirect("/login");
           } else {
             // Mot de passe incorrect
             res.status(401).send("Mot de passe incorrect");
@@ -389,11 +420,21 @@ app.post("/create-server", (req, res) => {
   const serverName = req.body.serverName;
   const userCookie = req.cookies.user;
   let containers;
-
+  console.log("1");
   db.get(
     "SELECT * FROM users WHERE cookie = ?",
     [userCookie],
     (err, userRow) => {
+      for (each in userRow) {
+        console.log(each);
+      }
+      if (err) {
+        return console.log(`error : ${err}`);
+      }
+      console.log("1");
+      if (!userRow) {
+        console.log("not first user raw")
+      }
       if (userRow) {
         const username = userRow.username;
         const uuid = userRow.uuid;
@@ -402,20 +443,31 @@ app.post("/create-server", (req, res) => {
           "SELECT * FROM servers WHERE username = ? ",
           [username],
           (err, serverRow) => {
-            if (!serverRow.containers) {
-              containers = {};
+            if (err) {
+              console.log(`error : ${err}`);
+            }
+            console.log("1");
+            if (serverRow) {
+            }
+            if (serverRow.containers) {
+              console.log("user raw")
+              containers = serverRow.containers;
+              console.log(containers)
             } else if (!serverRow) {
               console.log("error");
+              containers = {};
               return;
             } else {
-              containers = serverRow.containers;
+              console.log("not user raw")
+              containers = [];
             }
             let num_liste = 0;
             findAvailableID(
               (idUnique) => {
                 // Trouver un port non attribué (exemple : commencez par 30000)
                 let availablePort = 20000; // Port maximum autorisé
-
+                console.log(`Id : ${idUnique}`);
+                const container_select = uuid + idUnique;
                 findAvailablePort(
                   (port) => {
                     if (port === null) {
@@ -441,18 +493,24 @@ app.post("/create-server", (req, res) => {
                         };
 
                         // Mettre à jour la liste des conteneurs dans la base de données
-                        updateDataIntodb(srv, "servers", serverName, username);
+                        updateInstertingDataIntodb(
+                          srv,
+                          "servers",
+                          serverName,
+                          username
+                        );
                         updateDataIntodb(
                           srv_run,
                           "runnings",
                           serverName,
-                          username
+                          username,
+                          container_select
                         );
                       });
                     }
                   },
                   availablePort,
-                  maxPort
+                  65565
                 );
               },
               0,
@@ -505,10 +563,18 @@ app
                     .status(500)
                     .json({ success: false, message: "Internal Server Error" });
                 } else {
-                  res.json({
-                    success: true,
-                    message: "Registration successful",
-                  });
+                  srv.run(
+                    "INSERT INTO servers (username, password, uuid) VALUES (?)",
+                    [username],
+                    (insertErr, rowServ) => {
+                      if (!insertErr) {
+                        res.json({
+                          success: true,
+                          message: "Registration successful",
+                        });
+                      }
+                    }
+                  );
                 }
               }
             );

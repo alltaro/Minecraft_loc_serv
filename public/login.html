@@ -30,14 +30,23 @@
           },
           body: JSON.stringify({ username, password }),
         })
-          .then((response) => response.json())
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+          })
           .then((data) => {
             if (!data.success) {
               alert(data.message);
+            } else {
+              // Redirect to the desired page after successful login
+              window.location.href = "/gerer-op";
             }
           })
           .catch((error) => {
             console.error("Error:", error);
+            alert("An error occurred while processing your request.");
           });
       }
     </script>

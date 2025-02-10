@@ -27,6 +27,7 @@ export default defineEventHandler(async (event) => {
     const isRunning = containerInfo.State.Running;
 
     return {
+      port:server.port,
       serverName: server.serverName, 
       dockerId: server.dockerId,
       status: isRunning ? "running" : "stopped",

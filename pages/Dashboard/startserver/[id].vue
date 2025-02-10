@@ -74,6 +74,40 @@ const stopServer = async () => {
   }
 };
 
+const deleted = async () => {
+
+  isLoading.value = true;
+  const serverName = server.value.serverName;
+  try {
+    const token = useCookie("authToken").value; // Remplace par le token actuel de l'utilisateur
+    const response = await fetch(`/api/dockers/stopserver/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token, serverName }),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      console.log('Server stopped successfully', data);
+      server.value.Running = false; // Met à jour l'état du serveur
+      toast.add({
+        color: "amber",
+        title: "Server deleted",
+        icon: "solar:restart-square-broken",
+        description: "user signed out successfully.",
+      });
+      navigateTo('/dashboard')
+    } else {
+      console.log('Failed to stop server:', data.error);
+    }
+  } catch (error) {
+    console.log('Error stopping server:', error);
+  } finally {
+    isLoading.value = false;
+  }
+}
+
 // Fonction pour récupérer l'état du serveur
 const fetchServerStatus = async () => {
   try {
@@ -164,7 +198,13 @@ onMounted(() => {
       {{ isLoading ? 'En cours...' : buttonText }}
     </button>
     <UButton label="Open" @click="status()" />
+    <UButton label="Remove" @click="deleted()" />
 
+    <article>
+      status : {{ server.status }}
+      <br>
+      port : {{ server.port }}
+    </article>
 
   </div>
 </template>

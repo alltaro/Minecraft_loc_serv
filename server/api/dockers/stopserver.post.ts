@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   try {
     // Démarrer le conteneur Docker
     const container = docker.getContainer(server.dockerId);
-    await container.start();
+    await container.stop();
 
     return { message: 'Server started successfully' };
   } catch (error) {

@@ -8,7 +8,7 @@ const docker = new Docker({ timeout: 60000 });
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
-  const { token, serverName, port } = body;
+  const { token, serverName } = body;
 
   // Vérification du token et récupération de l'utilisateur
   const username = await getUsernameFromToken(token);
@@ -29,16 +29,7 @@ export default defineEventHandler(async (event) => {
   try {
     // Démarrer le conteneur Docker
     const container = docker.getContainer(server.dockerId);
-    if (port) {
-      await container.update({
-        HostConfig: {
-          PortBindings: {
-            '25565/tcp': [{ HostPort: port.toString() }],
-          },
-        },
-      });
-    }
-    await container.start();
+    await container.remove();
 
     return { message: 'Server started successfully' };
   } catch (error) {

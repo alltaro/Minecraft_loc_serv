@@ -1,0 +1,11 @@
+node_modules/
+/.bun/
+/.svelte-kit/
+build/
+dist/
+src-tauri/target/
+/.minepanel-users.json
+/.minepanel-owners.json
+/.minepanel-collaborators.json
+/.minepanel-invitations.json
+/.minepanel-state.json

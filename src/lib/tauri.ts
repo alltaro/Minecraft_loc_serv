@@ -54,7 +54,8 @@ export function deleteWorldMap(serverName: string): Promise<string> {
   return callTauri<string>("delete_world_map", { serverName });
 }
 
-export type MinecraftVersion = { id: string; label: string };
+export type MinecraftVersion = { id: string; label: string; type: "release" | "snapshot" };
+export type MinecraftVersionCatalog = { versions: MinecraftVersion[]; source: "mojang" | "local" };
 
 // Bundle the catalog with the UI so it is available both through Vite and in
 // desktop builds, where the local HTTP API proxy is not present.
@@ -63,15 +64,68 @@ const versionCatalog = import.meta.glob("../../versions/*.json", {
   import: "default",
 }) as Record<string, { id?: unknown; label?: unknown }>;
 
-export async function listMinecraftVersions(): Promise<MinecraftVersion[]> {
-  return Object.values(versionCatalog)
+export async function listMinecraftVersions(): Promise<MinecraftVersionCatalog> {
+  if (!isTauri()) {
+    try {
+      const response = await fetch(localApiUrl("/api/versions"));
+      const catalog = await response.json() as { versions?: unknown; source?: unknown };
+      if (response.ok && Array.isArray(catalog.versions)) {
+        const versions = catalog.versions.filter((version): version is { id: string; label: string; type?: unknown } =>
+          !!version && typeof version === "object" &&
+          typeof (version as MinecraftVersion).id === "string" &&
+          typeof (version as MinecraftVersion).label === "string")
+          .map((version) => ({ id: version.id, label: version.label, type: version.type === "snapshot" ? "snapshot" as const : "release" as const }));
+        if (versions.length) return { versions, source: catalog.source === "mojang" ? "mojang" : "local" };
+      }
+    } catch {
+      // Use the checked-in versions if the local API or Mojang catalog is unavailable.
+    }
+  }
+  const versions = Object.values(versionCatalog)
     .filter((version): version is { id: string; label: string } =>
       typeof version.id === "string" && typeof version.label === "string")
-    .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
+    .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }))
+    .map((version) => ({ ...version, type: "release" as const }));
+  return { versions, source: "local" };
 }
 
 export function createServer(name: string, version: string, serverType = "VANILLA"): Promise<number> {
   return callTauri<number>("create_server", { name, version, serverType });
+}
+
+export async function createServerWithMods(name: string, version: string, serverType: string, mods: File[]): Promise<number> {
+  if (isTauri()) {
+    if (mods.length) throw new Error("La préinstallation des mods est disponible depuis l’interface web locale.");
+    return createServer(name, version, serverType);
+  }
+  const form = new FormData();
+  form.set("name", name);
+  form.set("version", version);
+  form.set("serverType", serverType);
+  for (const mod of mods) form.append("mods", mod, mod.name);
+  const response = await fetch(localApiUrl("/api/server"), { method: "POST", credentials: "include", body: form });
+  const result = await response.json() as { jobId?: string; error?: string };
+  if (!response.ok) throw new Error(result.error ?? "Impossible de créer le serveur.");
+  if (!result.jobId) throw new Error("L’API n’a pas renvoyé l’identifiant du suivi de création.");
+
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let networkFailures = 0;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const statusResponse = await fetch(localApiUrl(`/api/server/jobs/${encodeURIComponent(result.jobId)}`), { credentials: "include" });
+      const status = await statusResponse.json() as { status?: string; port?: number; error?: string };
+      if (!statusResponse.ok) throw new Error(status.error ?? "Impossible de suivre la création du serveur.");
+      networkFailures = 0;
+      if (status.status === "complete" && typeof status.port === "number") return status.port;
+      if (status.status === "error") throw new Error(status.error ?? "Impossible de créer le serveur.");
+    } catch (reason) {
+      if (!(reason instanceof TypeError)) throw reason;
+      networkFailures++;
+      if (networkFailures >= 5) throw new Error("La connexion à l’API locale est interrompue. Vérifie le terminal « bun run dev » ; la création peut encore être en cours.");
+    }
+  }
+  throw new Error("La création prend plus de 15 minutes. Vérifie les journaux Docker et le terminal MinePanel avant de réessayer.");
 }
 
 export function setServerRunning(name: string, running: boolean): Promise<void> {
@@ -84,6 +138,14 @@ export function deleteServer(name: string): Promise<void> {
 
 export function listOperators(serverName: string): Promise<string[]> {
   return callTauri<string[]>("list_operators", { serverName });
+}
+
+export function getServerLogs(serverName: string): Promise<string> {
+  return callTauri<string>("get_server_logs", { serverName });
+}
+
+export function executeServerCommand(serverName: string, serverCommand: string): Promise<string> {
+  return callTauri<string>("send_server_command", { serverName, serverCommand });
 }
 
 export function addOperator(serverName: string, playerName: string): Promise<void> {

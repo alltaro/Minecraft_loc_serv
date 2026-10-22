@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { isTauri } from "@tauri-apps/api/core";
-  import { acceptServerInvitation, addOperator, authenticate, createServer as createDockerServer, createServerInvitation, deleteServer, deleteWorldMap, getCurrentUser, installMod, listMinecraftVersions, listMods, listOperators, listServers, logout, removeCollaborator, removeMod, removeOperator, setServerRunning } from "$lib/tauri";
+  import { acceptServerInvitation, addOperator, authenticate, createServerWithMods, createServerInvitation, deleteServer, deleteWorldMap, executeServerCommand, getCurrentUser, getServerLogs, installMod, listMinecraftVersions, listMods, listOperators, listServers, logout, removeCollaborator, removeMod, removeOperator, setServerRunning } from "$lib/tauri";
   import type { MinecraftVersion } from "$lib/tauri";
   import type { Mod, Server } from "$lib/types";
 
@@ -9,15 +9,28 @@
   let selectedServer: string | null = $state(null);
   let mods: Mod[] = $state([]);
   let operators: string[] = $state([]);
+  let serverLogs = $state("");
+  let serverLogsLoading = $state(false);
+  let serverCommand = $state("");
+  let serverCommandOutput = $state("");
+  let sendingServerCommand = $state(false);
+  let selectionRequest = 0;
+  let logsRequest = 0;
   let newOperator = $state("");
   let message = $state("");
   let error = $state("");
   let loading = $state(false);
   let newServerName = $state("");
   let minecraftVersions: MinecraftVersion[] = $state([]);
+  let versionsCatalogWarning = $state("");
   let newServerVersion = $state("");
   let newServerType = $state("VANILLA");
   let creatingServer = $state(false);
+  let createDialogOpen = $state(false);
+  let creationError = $state("");
+  let stagedMods: File[] = $state([]);
+  let modDropActive = $state(false);
+  let createModInput: HTMLInputElement | undefined = $state();
   let modFileInput: HTMLInputElement | undefined = $state();
   let authReady = $state(false);
   let currentUser = $state<{ id: string; username: string } | null>(null);
@@ -47,6 +60,22 @@
     const server = servers.find((item) => item.name === selectedServer);
     const type = server?.serverType?.toUpperCase();
     return !type || ["NEOFORGE", "FORGE", "FABRIC", "QUILT"].includes(type);
+  }
+
+  function serverIsActive(server: Server): boolean {
+    return server.state === "running" || server.state === "restarting" || (!server.state && server.running);
+  }
+
+  function serverStatusLabel(server: Server): string {
+    if (server.state === "restarting") return "Redémarrage en boucle";
+    if (server.state === "created") return "En attente de démarrage";
+    if (server.running) return "En ligne";
+    return "Arrêté";
+  }
+
+  function serverTypeLabel(server: Server): string {
+    if (server.serverType === "NEOFORGE") return server.loaderVersion ? `NeoForge ${server.loaderVersion}` : "NeoForge";
+    return server.serverType ?? "";
   }
 
   async function joinByInvitation() {
@@ -111,9 +140,13 @@
     try {
       servers = await listServers();
       if (selectedServer && !servers.some((server) => server.name === selectedServer)) {
+        selectionRequest++;
+        logsRequest++;
         selectedServer = null;
         mods = [];
         operators = [];
+        serverLogs = "";
+        serverLogsLoading = false;
       }
     } catch (reason) {
       error = String(reason);
@@ -123,17 +156,69 @@
   }
 
   async function selectServer(name: string) {
+    const requestId = ++selectionRequest;
     selectedServer = name;
     mods = [];
     operators = [];
+    serverLogs = "";
+    serverLogsLoading = true;
+    serverCommand = "";
+    serverCommandOutput = "";
+    logsRequest++;
     message = "";
     error = "";
     try {
       const [serverMods, serverOperators] = await Promise.all([listMods(name), listOperators(name)]);
+      if (requestId !== selectionRequest) return;
       mods = serverMods;
       operators = serverOperators;
     } catch (reason) {
+      if (requestId !== selectionRequest) return;
       error = String(reason);
+    }
+    await refreshServerLogs();
+  }
+
+  async function refreshServerLogs() {
+    const name = selectedServer;
+    if (!name) return;
+    const requestId = ++logsRequest;
+    serverLogsLoading = true;
+    try {
+      const logs = await getServerLogs(name);
+      if (selectedServer === name && requestId === logsRequest) serverLogs = logs;
+    } catch (reason) {
+      if (selectedServer === name && requestId === logsRequest) {
+        serverLogs = String(reason);
+        error = String(reason);
+      }
+    } finally {
+      if (selectedServer === name && requestId === logsRequest) serverLogsLoading = false;
+    }
+  }
+
+  async function sendServerCommand(event: SubmitEvent) {
+    event.preventDefault();
+    const name = selectedServer;
+    const command = serverCommand.trim();
+    if (!name || !command) return;
+    const server = servers.find((item) => item.name === name);
+    if (!server?.running) {
+      error = "Démarre le serveur avant d’envoyer une commande.";
+      return;
+    }
+    sendingServerCommand = true;
+    error = "";
+    try {
+      const response = await executeServerCommand(name, command);
+      serverCommandOutput = `> ${command}\n${response}`;
+      serverCommand = "";
+      await refreshServerLogs();
+    } catch (reason) {
+      error = String(reason);
+      serverCommandOutput = `> ${command}\n${String(reason)}`;
+    } finally {
+      sendingServerCommand = false;
     }
   }
 
@@ -213,17 +298,87 @@
     }
   }
 
+  function openCreateDialog() {
+    error = "";
+    creationError = "";
+    stagedMods = [];
+    createDialogOpen = true;
+  }
+
+  function changeServerType(event: Event) {
+    newServerType = (event.currentTarget as HTMLSelectElement).value;
+    stagedMods = [];
+    creationError = "";
+    if (newServerType === "NEOFORGE" && minecraftVersions.find((version) => version.id === newServerVersion)?.type === "snapshot") {
+      newServerVersion = minecraftVersions.find((version) => version.type === "release")?.id ?? "";
+    }
+  }
+
+  function addCreationMods(files: FileList | File[]) {
+    if (newServerType !== "NEOFORGE") {
+      creationError = "Les mods nécessitent un serveur NeoForge. Change le type du serveur pour continuer.";
+      return;
+    }
+    creationError = "";
+    const combined = [...stagedMods];
+    for (const file of Array.from(files)) {
+      if (!/\.jar$/i.test(file.name)) {
+        creationError = `${file.name} n’est pas un fichier .jar de mod.`;
+        continue;
+      }
+      if (file.size === 0 || file.size > 100 * 1024 * 1024) {
+        creationError = `${file.name} est vide ou dépasse 100 Mo.`;
+        continue;
+      }
+      if (combined.some((item) => item.name.toLowerCase() === file.name.toLowerCase())) {
+        creationError = `${file.name} est déjà dans la sélection.`;
+        continue;
+      }
+      combined.push(file);
+    }
+    if (combined.length > 30) {
+      creationError = "Tu peux sélectionner au maximum 30 mods.";
+      return;
+    }
+    if (combined.reduce((total, file) => total + file.size, 0) > 500 * 1024 * 1024) {
+      creationError = "La taille totale des mods dépasse 500 Mo.";
+      return;
+    }
+    stagedMods = combined;
+  }
+
+  function chooseCreationMods(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files) addCreationMods(input.files);
+    input.value = "";
+  }
+
+  function dropCreationMods(event: DragEvent) {
+    event.preventDefault();
+    modDropActive = false;
+    if (event.dataTransfer?.files) addCreationMods(event.dataTransfer.files);
+  }
+
+  function removeCreationMod(name: string) {
+    stagedMods = stagedMods.filter((file) => file.name !== name);
+    creationError = "";
+  }
+
   async function createServer() {
     creatingServer = true;
     error = "";
     message = "";
     try {
-      const assignedPort = await createDockerServer(newServerName.trim(), newServerVersion, newServerType);
+      const assignedPort = await createServerWithMods(newServerName.trim(), newServerVersion, newServerType, stagedMods);
       newServerName = "";
+      stagedMods = [];
+      createDialogOpen = false;
       message = `Le serveur ${newServerType === "NEOFORGE" ? "NeoForge" : "Vanilla"} Minecraft ${newServerVersion} a été créé et démarré sur le port ${assignedPort}.`;
       await loadServers();
     } catch (reason) {
       error = String(reason);
+      createDialogOpen = false;
+      await loadServers(true);
     } finally {
       creatingServer = false;
     }
@@ -232,7 +387,7 @@
   async function toggleServer(server: Server) {
     error = "";
     try {
-      await setServerRunning(server.name, !server.running);
+      await setServerRunning(server.name, !serverIsActive(server));
       await loadServers();
     } catch (reason) {
       error = String(reason);
@@ -296,7 +451,11 @@
   async function initialize() {
     const invite = new URL(window.location.href).searchParams.get("invite");
     if (invite) invitationInput = invite;
-    minecraftVersions = await listMinecraftVersions();
+    const versionCatalog = await listMinecraftVersions();
+    minecraftVersions = versionCatalog.versions;
+    versionsCatalogWarning = versionCatalog.source === "local"
+      ? "Catalogue Mojang indisponible : seules les versions présentes dans le dossier versions/ sont proposées."
+      : "";
     newServerVersion = minecraftVersions[0]?.id ?? "";
     if (isTauri()) {
       authReady = true;
@@ -410,20 +569,72 @@
     {#if message}<div class="notice success">{message}</div>{/if}
     {#if error}<div class="notice error">{error}</div>{/if}
 
-    <form class="create-panel" onsubmit={(event) => { event.preventDefault(); void createServer(); }}>
+    {#if createDialogOpen}
+      <div class="create-modal-backdrop" role="presentation">
+        <section class="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+          <div class="modal-heading">
+            <div><p class="eyebrow">PRÉPARATION DU SERVEUR</p><h2 id="create-modal-title">{newServerType === "NEOFORGE" ? "Ajouter des mods avant le premier démarrage" : "Préparer le premier démarrage"}</h2></div>
+            <button class="modal-close" type="button" aria-label="Fermer" onclick={() => createDialogOpen = false} disabled={creatingServer}>×</button>
+          </div>
+          <p class="modal-description">{newServerType === "NEOFORGE" ? "MinePanel installe d’abord les fichiers Minecraft et NeoForge, copie les mods sélectionnés dans le serveur, puis lance Minecraft et crée le monde." : "MinePanel prépare les fichiers Minecraft, puis lance le serveur Vanilla et crée le monde."}</p>
+          {#if newServerType === "NEOFORGE" && !isTauri()}
+            <input bind:this={createModInput} class="file-input" type="file" accept=".jar" multiple disabled={creatingServer} onchange={chooseCreationMods} />
+            <div class:drop-active={modDropActive} class="mod-drop-zone" role="button" tabindex="0"
+              onclick={() => { if (!creatingServer) createModInput?.click(); }}
+              onkeydown={(event) => { if (!creatingServer && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); createModInput?.click(); } }}
+              ondragover={(event) => { event.preventDefault(); if (!creatingServer) modDropActive = true; }}
+              ondragleave={() => modDropActive = false}
+              ondrop={(event) => { if (creatingServer) event.preventDefault(); else dropCreationMods(event); }}>
+              <span class="drop-icon">＋</span>
+              <strong>Dépose les fichiers .jar ici</strong>
+              <span>ou clique pour les sélectionner dans l’explorateur</span>
+              <small>Jusqu’à 30 fichiers, 100 Mo chacun · Tu peux aussi continuer sans mod.</small>
+            </div>
+            {#if stagedMods.length}
+              <div class="staged-mod-list" aria-label="Mods sélectionnés">
+                {#each stagedMods as mod (mod.name)}
+                <div class="staged-mod"><span>▦</span><strong>{mod.name}</strong><small>{formatSize(mod.size)}</small><button type="button" aria-label="Retirer {mod.name}" onclick={() => removeCreationMod(mod.name)} disabled={creatingServer}>×</button></div>
+                {/each}
+              </div>
+            {/if}
+          {:else if newServerType === "VANILLA"}
+            <p class="modal-info">Ce serveur est Vanilla : tu peux le créer sans mods. Pour préparer des mods avant le premier monde, choisis NeoForge dans le formulaire.</p>
+          {:else}
+            <p class="modal-info">La préparation préalable des mods est disponible depuis l’interface web locale.</p>
+          {/if}
+          {#if creationError}<div class="notice error modal-error">{creationError}</div>{/if}
+          <div class="modal-actions">
+            <button class="button secondary" type="button" onclick={() => createDialogOpen = false} disabled={creatingServer}>Annuler</button>
+            <button class="button primary" type="button" onclick={createServer} disabled={creatingServer || !!creationError}>
+              {creatingServer ? "Installation puis démarrage…" : stagedMods.length ? `Créer avec ${stagedMods.length} mod${stagedMods.length > 1 ? "s" : ""}` : "Créer sans mod"}
+            </button>
+          </div>
+        </section>
+      </div>
+    {/if}
+
+    <form class="create-panel" onsubmit={(event) => { event.preventDefault(); openCreateDialog(); }}>
       <div><p class="eyebrow">NOUVEAU CONTENEUR DOCKER</p><h2>Créer un serveur Minecraft</h2></div>
       <label>Nom du serveur<input bind:value={newServerName} required minlength="1" maxlength="64" pattern="[A-Za-z0-9_.-]+" placeholder="survie" /></label>
       <label>Version du serveur<select bind:value={newServerVersion} required disabled={creatingServer || minecraftVersions.length === 0}>
-        {#if minecraftVersions.length === 0}<option value="" disabled>Aucune version trouvée dans versions/</option>{/if}
-        {#each minecraftVersions as version (version.id)}<option value={version.id}>{version.label}</option>{/each}
+        {#if minecraftVersions.length === 0}<option value="" disabled>Aucune version disponible</option>{/if}
+        <optgroup label="Versions stables">
+          {#each minecraftVersions.filter((version) => version.type === "release") as version (version.id)}<option value={version.id}>{version.label}</option>{/each}
+        </optgroup>
+        {#if newServerType !== "NEOFORGE"}
+          <optgroup label="Snapshots (versions de test)">
+            {#each minecraftVersions.filter((version) => version.type === "snapshot") as version (version.id)}<option value={version.id}>{version.label}</option>{/each}
+          </optgroup>
+        {/if}
       </select></label>
-      <label>Type de serveur<select bind:value={newServerType} disabled={creatingServer}>
+      {#if versionsCatalogWarning}<span class="port-hint">{versionsCatalogWarning}</span>{/if}
+      <label>Type de serveur<select bind:value={newServerType} onchange={changeServerType} disabled={creatingServer}>
         <option value="VANILLA">Vanilla</option>
         <option value="NEOFORGE">NeoForge (mods)</option>
       </select></label>
       <span class="port-hint">{newServerType === "NEOFORGE" ? "Pour les mods, les joueurs devront utiliser NeoForge dans la même version." : "Vanilla accepte les clients Minecraft non moddés."}</span>
-      <span class="port-hint">Port public attribué automatiquement à partir de 8000</span>
-      <button class="button primary" type="submit" disabled={creatingServer || !newServerName.trim() || !newServerVersion}>{creatingServer ? "Création…" : "Créer et démarrer"}</button>
+      <span class="port-hint">Port public attribué automatiquement à partir de 38000</span>
+      <button class="button primary" type="submit" disabled={creatingServer || !newServerName.trim() || !newServerVersion}>Continuer</button>
     </form>
 
     {#if !isTauri()}
@@ -453,9 +664,9 @@
               <span class="server-icon">◆</span>
               <span class="server-info">
                 <strong>{server.name}</strong>
-                <small><span class:stopped={!server.running} class="status-dot"></span>{server.running ? "En ligne" : "Arrêté"}{server.port ? ` · Port ${server.port}` : ""}</small>
+                <small><span class:stopped={!server.running} class="status-dot"></span>{serverStatusLabel(server)}{server.port ? ` · Port ${server.port}` : ""}</small>
                 <small class="server-version">Minecraft {server.version ?? "version inconnue"}</small>
-                {#if server.serverType}<small>{server.serverType === "NEOFORGE" ? "NeoForge" : server.serverType}</small>{/if}
+                {#if server.serverType}<small>{serverTypeLabel(server)}</small>{/if}
                 {#if server.role === "collaborator"}<small>Collaborateur de {server.ownerUsername}</small>{/if}
               </span>
               <span class="chevron">›</span>
@@ -469,7 +680,7 @@
               </div>
             {/if}
             <div class="server-actions">
-              <button type="button" onclick={() => toggleServer(server)}>{server.running ? "Arrêter" : "Démarrer"}</button>
+              <button type="button" onclick={() => toggleServer(server)}>{serverIsActive(server) ? "Arrêter" : "Démarrer"}</button>
               {#if !isTauri() && server.role === "owner"}<button type="button" onclick={() => generateInvitation(server.name)}>Inviter</button>{/if}
               {#if server.role !== "collaborator"}<button class="danger-action" type="button" onclick={() => removeServer(server)}>Supprimer</button>{/if}
             </div>
@@ -527,6 +738,47 @@
         {:else}<div class="empty-mods">Aucun opérateur trouvé.</div>{/if}
       {:else}<div class="empty-mods">Choisissez un serveur pour gérer ses opérateurs.</div>{/if}
     </section>
+
+    <section class="mods-panel command-panel" id="commands">
+      <div class="section-heading">
+        <div><p class="eyebrow">CONSOLE MINECRAFT</p><h2>{selectedServer ? `Commande pour ${selectedServer}` : "Envoyer une commande"}</h2></div>
+      </div>
+      {#if selectedServer}
+        {@const selected = servers.find((server) => server.name === selectedServer)}
+        {#if selected?.running}
+          <form class="server-command-form" onsubmit={sendServerCommand}>
+            <label class="sr-only" for="server-command">Commande Minecraft</label>
+            <input id="server-command" bind:value={serverCommand} maxlength="512" autocomplete="off" placeholder="Ex. say Bonjour à tous" disabled={sendingServerCommand} />
+            <button class="button primary" type="submit" disabled={sendingServerCommand || !serverCommand.trim()}>
+              {sendingServerCommand ? "Envoi…" : "Envoyer"}
+            </button>
+          </form>
+          <small class="logs-hint">La commande est exécutée dans la console du serveur. Le préfixe / est facultatif.</small>
+          {#if serverCommandOutput}<pre class="command-output" aria-live="polite">{serverCommandOutput}</pre>{/if}
+        {:else}
+          <div class="empty-mods">Démarre ce serveur pour pouvoir lui envoyer des commandes.</div>
+        {/if}
+      {:else}
+        <div class="empty-mods">Sélectionnez un serveur pour envoyer une commande.</div>
+      {/if}
+    </section>
+
+    <section class="mods-panel logs-panel" id="logs">
+      <div class="section-heading">
+        <div><p class="eyebrow">JOURNAUX DOCKER</p><h2>{selectedServer ? `Logs de ${selectedServer}` : "Logs du serveur"}</h2></div>
+        <button class="button secondary" type="button" onclick={refreshServerLogs} disabled={!selectedServer || serverLogsLoading}>
+          {serverLogsLoading ? "Chargement…" : "Actualiser"}
+        </button>
+      </div>
+      {#if !selectedServer}
+        <div class="empty-mods">Sélectionnez un serveur pour afficher ses derniers journaux.</div>
+      {:else if serverLogsLoading && !serverLogs}
+        <div class="empty-mods">Chargement des journaux…</div>
+      {:else}
+        <pre class="server-logs" aria-live="polite">{serverLogs || "Aucun journal disponible pour ce serveur."}</pre>
+        <small class="logs-hint">Les 200 dernières lignes sont affichées. Clique sur « Actualiser » pour les recharger.</small>
+      {/if}
+    </section>
   </section>
 </main>
 {/if}
@@ -552,6 +804,13 @@
   .notice { margin: 24px 0 0; padding: 12px 15px; border-radius: 8px; font-size: 13px; } .notice.success { color: #bbf7d0; background: #14532d; } .notice.error { color: #fecaca; background: #7f1d1d; }
   .server-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 13px; margin: 32px 0 48px; } .server-card, .empty-card { min-height: 112px; padding: 18px; border: 1px solid #263449; border-radius: 12px; background: #111c30; color: #e2e8f0; text-align: left; }
   .create-panel { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; margin-top: 30px; padding: 20px; border: 1px solid #263449; border-radius: 12px; background: #111c30; } .create-panel > div { flex: 1 1 100%; } .create-panel h2 { font-size: 18px; } .create-panel label { display: grid; gap: 7px; color: #94a3b8; font-size: 12px; } .create-panel input, .create-panel select { min-width: 150px; padding: 10px 12px; border: 1px solid #334155; border-radius: 7px; color: #f8fafc; background: #0b1120; font: inherit; } .port-hint { color: #94a3b8; font-size: 12px; }
+  .create-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; overflow-y: auto; background: #020617d9; }
+  .create-modal { width: min(640px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; padding: 26px; border: 1px solid #334155; border-radius: 16px; background: #111c30; box-shadow: 0 24px 90px #0009; }
+  .modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; } .modal-heading h2 { max-width: 500px; font-size: 21px; line-height: 1.3; } .modal-close { width: 34px; height: 34px; flex: 0 0 auto; border: 0; border-radius: 8px; color: #cbd5e1; background: #1e293b; cursor: pointer; font-size: 23px; line-height: 1; } .modal-close:disabled { opacity: .5; cursor: not-allowed; }
+  .modal-description, .modal-info { margin: 14px 0 20px; color: #94a3b8; font-size: 13px; line-height: 1.6; } .modal-info { padding: 14px; border: 1px solid #334155; border-radius: 9px; background: #0b1120; }
+  .mod-drop-zone { display: flex; min-height: 190px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 24px; border: 1px dashed #4b647c; border-radius: 12px; color: #cbd5e1; background: #0b1120; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; } .mod-drop-zone:hover, .mod-drop-zone.drop-active { border-color: #4ade80; background: #10251f; } .mod-drop-zone:focus-visible { outline: 2px solid #4ade80; outline-offset: 3px; } .mod-drop-zone strong { color: #f8fafc; font-size: 15px; } .mod-drop-zone > span:not(.drop-icon) { color: #94a3b8; font-size: 13px; } .mod-drop-zone small { margin-top: 5px; color: #64748b; font-size: 11px; } .drop-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; color: #86efac; background: #14532d; font-size: 24px; }
+  .staged-mod-list { margin-top: 15px; border-top: 1px solid #263449; } .staged-mod { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid #263449; color: #86efac; } .staged-mod strong { flex: 1; overflow: hidden; color: #e2e8f0; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; } .staged-mod small { color: #64748b; font-size: 11px; } .staged-mod button { border: 0; color: #fca5a5; background: transparent; cursor: pointer; font-size: 19px; }
+  .modal-error { margin: 14px 0 0; white-space: pre-wrap; } .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
   .invite-join, .share-panel { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding: 18px 20px; border: 1px solid #263449; border-radius: 12px; background: #111c30; } .invite-join label { flex: 1 1 100%; color: #94a3b8; font-size: 12px; } .invite-join input, .share-panel input { flex: 1 1 320px; min-width: 180px; padding: 10px 12px; border: 1px solid #334155; border-radius: 7px; color: #f8fafc; background: #0b1120; font: inherit; } .share-panel { align-items: center; } .share-panel > div { flex: 1 1 100%; } .share-panel strong, .share-panel small { display: block; } .share-panel small { margin-top: 5px; color: #94a3b8; font-size: 12px; } .share-panel .collaborator-list { flex: 1 1 100%; }
   .server-card { padding: 0; overflow: hidden; } .server-card:hover, .server-card.selected { border-color: #22c55e; background: #132b2a; } .server-select { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; } .server-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 9px; color: #86efac; background: #14532d; }
   .server-actions { display: flex; justify-content: space-between; padding: 0 16px 13px; } .server-actions button { padding: 0; border: 0; color: #86efac; background: transparent; cursor: pointer; font-size: 12px; } .server-actions .danger-action { color: #fca5a5; }
@@ -560,5 +819,7 @@
   .mods-panel { padding: 26px; border: 1px solid #263449; border-radius: 14px; background: rgba(15, 23, 42, .72); } .mod-list { margin-top: 24px; border-top: 1px solid #263449; } .mod-row { display: flex; align-items: center; gap: 13px; padding: 14px 0; border-bottom: 1px solid #1e293b; }
   .mod-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; } .delete-world-button { border-color: #713f46; color: #fca5a5; } .delete-world-button:disabled { opacity: .5; cursor: not-allowed; } .file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
   .operators-panel { margin-top: 22px; } .operator-form { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 24px; } .operator-form label { color: #94a3b8; font-size: 12px; } .operator-form input { min-width: 180px; padding: 10px 12px; border: 1px solid #334155; border-radius: 7px; color: #f8fafc; background: #0b1120; font: inherit; } .operator-list { margin-top: 20px; border-top: 1px solid #263449; }
+  .logs-panel { margin-top: 22px; } .server-logs { max-height: 440px; overflow: auto; margin: 22px 0 8px; padding: 16px; border: 1px solid #1e293b; border-radius: 9px; color: #cbd5e1; background: #070d18; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; } .logs-hint { color: #64748b; font-size: 11px; }
+  .command-panel { margin-top: 22px; } .server-command-form { display: flex; gap: 10px; margin-top: 22px; } .server-command-form input { flex: 1; min-width: 0; padding: 11px 13px; border: 1px solid #334155; border-radius: 7px; color: #f8fafc; background: #0b1120; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; } .command-output { max-height: 180px; overflow: auto; margin: 15px 0 0; padding: 13px; border: 1px solid #1e293b; border-radius: 8px; color: #cbd5e1; background: #070d18; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; } .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .mod-icon { color: #86efac; } .mod-name { flex: 1; } .mod-name strong, .mod-name small { display: block; } .mod-name small { margin-top: 4px; color: #64748b; font-size: 12px; } .remove-mod { border: 0; color: #fca5a5; background: transparent; cursor: pointer; font-size: 12px; } .empty-mods { padding: 32px 0 8px; color: #64748b; text-align: center; }
 </style>

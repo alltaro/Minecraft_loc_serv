@@ -8,7 +8,7 @@ supprimer des mods `.jar` et `.zip` dans `/minecraft/mods` du conteneur
 sélectionné. La liste des versions proposées à la création est tenue dans
 `versions/` ; chaque fichier JSON y décrit une version acceptée par l'image
 Docker. À la création, un port public disponible est attribué
-automatiquement en commençant à `8000` (puis `8001`, etc.).
+automatiquement en commençant à `38000` (puis `38001`, etc.).
 À la création, le type Vanilla ou NeoForge est sélectionnable (Vanilla par
 défaut). NeoForge permet d'installer des mods ; les serveurs Vanilla ne les
 chargent pas. Les serveurs existants ne sont pas convertis automatiquement.
